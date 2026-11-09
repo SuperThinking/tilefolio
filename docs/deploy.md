@@ -34,15 +34,9 @@ The CI SSH key can only run `tilefolio-deploy` (forced command + `restrict`), wi
    `ssh-keygen -t ed25519 -N '' -f ~/.ssh/tilefolio_ci -C tilefolio-ci`
 3. **Bootstrap the server.** Installs Caddy, uv, the systemd unit and the firewall, and turns off SSH password login:
    `make bootstrap CORS_ORIGIN=https://<github-user>.github.io`
-4. **GitHub repo** (after `gh auth login`):
-   ```bash
-   gh repo create <repo> --public --source . --push      # or create it in the UI and push
-   gh variable set BACKEND_HOST --body 139-84-221-234.sslip.io
-   gh variable set DEPLOY_HOST  --body 139.84.221.234
-   gh secret set DEPLOY_SSH_KEY < ~/.ssh/tilefolio_ci
-   ssh-keyscan -t ed25519 139.84.221.234 | gh secret set DEPLOY_KNOWN_HOSTS
-   ```
-   Then go to Settings → Pages → Source = **GitHub Actions**. Optionally, under Settings → Environments → `production`,
+4. **GitHub repo**: create it, then run `bash deploy/github-setup.sh`. It sets the variables and secrets,
+   enables Pages (source = Actions) and pushes `main`. It reads `GH_TOKEN` from the env or from `.env`, and it's safe to re-run.
+   Optionally, under Settings → Environments → `production`,
    add required reviewers so that production deploys need approval.
 5. Optional integrations go in `/etc/tilefolio/env`:
    - Google sign-in: set `TF_GOOGLE_CLIENT_ID`, and add `https://<user>.github.io` as an authorised JS origin.

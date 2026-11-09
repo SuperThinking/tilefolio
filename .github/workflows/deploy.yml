@@ -39,7 +39,7 @@ jobs:
       frontend: ${{ steps.f.outputs.frontend }}
       sha: ${{ steps.f.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: backend } }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { ref: "${{ needs.changes.outputs.sha }}" }
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --frozen
@@ -87,9 +87,9 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: frontend } }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { ref: "${{ needs.changes.outputs.sha }}" }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -112,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { ref: "${{ needs.changes.outputs.sha }}" }
       - name: SSH key
         env:
