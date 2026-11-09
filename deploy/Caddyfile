@@ -1,0 +1,27 @@
+# /etc/caddy/Caddyfile — installed by deploy/bootstrap.sh (__HOST__ is replaced).
+# Caddy gets and renews the Let's Encrypt certificate automatically.
+# The app listens on 127.0.0.1:8000 only; Caddy is the only public listener.
+__HOST__ {
+	encode gzip zstd
+	request_body {
+		max_size 6MB
+	}
+	reverse_proxy 127.0.0.1:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	log {
+		output stderr
+		# never log request bodies or query strings (CAS passwords travel in a header, tokens in URLs)
+		format filter {
+			request>uri query {
+				replace request_token REDACTED
+				replace code REDACTED
+			}
+			request>headers>Authorization delete
+			request>headers>X-Cas-Password delete
+			request>headers>Cookie delete
+		}
+	}
+}

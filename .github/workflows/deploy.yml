@@ -1,0 +1,154 @@
+# CI/CD: tests on every PR; on push to main, deploy whatever changed.
+#   backend/**  → test → deploy to the VPS (tilefolio-deploy, auto-rollback on failed health check)
+#   frontend/** → check + build → GitHub Pages (after the backend deploy, if both changed)
+# Manual run (Actions → deploy → Run workflow): pick a ref (rollback = an older sha) and what to deploy.
+#
+# Repo settings this needs (see docs/deploy.md):
+#   vars:    BACKEND_HOST (e.g. 139-84-221-234.sslip.io), DEPLOY_HOST (server IP or name)
+#   secrets: DEPLOY_SSH_KEY (private key pinned to tilefolio-deploy), DEPLOY_KNOWN_HOSTS
+#   Pages:   Settings → Pages → Source = GitHub Actions
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag to deploy (rollback = an older sha)
+        default: main
+      target:
+        description: What to deploy
+        type: choice
+        options: [both, backend, frontend]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.f.outputs.backend }}
+      frontend: ${{ steps.f.outputs.frontend }}
+      sha: ${{ steps.f.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+      - id: f
+        env:
+          EVENT: ${{ github.event_name }}
+          TARGET: ${{ inputs.target }}
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = workflow_dispatch ]; then
+            b=false; f=false
+            [ "$TARGET" != frontend ] && b=true
+            [ "$TARGET" != backend ] && f=true
+          else
+            from=${BASE:-$BEFORE}
+            if [ -z "$from" ] || ! git cat-file -e "$from" 2>/dev/null; then
+              files=$(git ls-files)                       # first push / force-push: treat all as changed
+            else
+              files=$(git diff --name-only "$from" HEAD)
+            fi
+            b=$(echo "$files" | grep -qE '^(backend/|deploy/|\.github/workflows/)' && echo true || echo false)
+            f=$(echo "$files" | grep -qE '^(frontend/|\.github/workflows/)' && echo true || echo false)
+          fi
+          echo "backend=$b" >> "$GITHUB_OUTPUT"; echo "frontend=$f" >> "$GITHUB_OUTPUT"
+          echo "backend=$b frontend=$f"
+
+  backend-test:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.changes.outputs.sha }}" }
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - run: uv run --frozen pytest -q
+      - run: bash -n ../deploy/remote-deploy.sh ../deploy/bootstrap.sh
+
+  frontend-build:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.changes.outputs.sha }}" }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+        env:
+          # '/<repo>/' for project pages; set vars.PAGES_BASE='/' for a <user>.github.io repo or custom domain
+          VITE_BASE: ${{ vars.PAGES_BASE || format('/{0}/', github.event.repository.name) }}
+          VITE_API_BASE: https://${{ vars.BACKEND_HOST }}
+      - run: cp dist/index.html dist/404.html   # SPA fallback (e.g. broker OAuth /connect/<id>)
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with: { path: frontend/dist }
+
+  backend-deploy:
+    needs: [changes, backend-test]
+    if: github.event_name != 'pull_request' && needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.changes.outputs.sha }}" }
+      - name: SSH key
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+      - name: Deploy (server health-checks and auto-rolls back)
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          SHA: ${{ needs.changes.outputs.sha }}
+        run: git archive --format=tar.gz HEAD backend | ssh -i ~/.ssh/deploy -o BatchMode=yes "tilefolio@$HOST" "deploy $SHA"
+      - name: Verify through the public URL
+        env:
+          URL: https://${{ vars.BACKEND_HOST }}/api/health
+          SHA: ${{ needs.changes.outputs.sha }}
+        run: |
+          for i in 1 2 3 4 5; do curl -fsS "$URL" | tee /dev/stderr | grep -q "\"version\":\"$SHA\"" && exit 0; sleep 3; done
+          exit 1
+
+  frontend-deploy:
+    needs: [changes, frontend-build, backend-deploy]
+    # run after the backend when both changed; still run when the backend was skipped
+    if: >-
+      always() && github.event_name != 'pull_request' &&
+      needs.frontend-build.result == 'success' &&
+      (needs.backend-deploy.result == 'success' || needs.backend-deploy.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - id: pages
+        uses: actions/deploy-pages@v4

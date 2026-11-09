@@ -1,0 +1,22 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+backend/data/
+backend/.env
+# node
+node_modules/
+frontend/dist/
+# misc
+.DS_Store
+*.log
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# Local-only package mirror config (not committed)
+mirrors.mk
+frontend/.npmrc
