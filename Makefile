@@ -35,14 +35,16 @@ run: build
 DEPLOY_HOST ?= 139.84.221.234
 BACKEND_HOST ?= 139-84-221-234.sslip.io
 CORS_ORIGIN ?=
+CLIENT_TOKEN ?=
 CI_PUBKEY ?= $(HOME)/.ssh/tilefolio_ci.pub
 
 # One-time / idempotent server setup over your root SSH key.
 bootstrap:
 	@test -n "$(CORS_ORIGIN)" || { echo "set CORS_ORIGIN=https://<github-user>.github.io"; exit 1; }
+	@test -n "$(CLIENT_TOKEN)" || { echo "set CLIENT_TOKEN to the same value as GitHub secret TILEFOLIO_CLIENT_TOKEN"; exit 1; }
 	@test -f "$(CI_PUBKEY)" || { echo "missing $(CI_PUBKEY) (ssh-keygen -t ed25519 -N '' -f $(basename $(CI_PUBKEY)) -C tilefolio-ci)"; exit 1; }
 	bundle=$$(tar czf - -C deploy remote-deploy.sh tilefolio.service Caddyfile | base64 | tr -d '\n'); \
-	ssh root@$(DEPLOY_HOST) "TF_BUNDLE=$$bundle bash -s -- '$(BACKEND_HOST)' '$(CORS_ORIGIN)' '$$(cat $(CI_PUBKEY))'" < deploy/bootstrap.sh
+	ssh root@$(DEPLOY_HOST) "TF_BUNDLE=$$bundle bash -s -- '$(BACKEND_HOST)' '$(CORS_ORIGIN)' '$$(cat $(CI_PUBKEY))' '$(CLIENT_TOKEN)'" < deploy/bootstrap.sh
 
 deploy-status:
 	curl -fsS https://$(BACKEND_HOST)/api/health; echo

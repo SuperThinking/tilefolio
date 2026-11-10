@@ -101,6 +101,7 @@ jobs:
           # '/<repo>/' for project pages; set vars.PAGES_BASE='/' for a <user>.github.io repo or custom domain
           VITE_BASE: ${{ vars.PAGES_BASE || format('/{0}/', github.event.repository.name) }}
           VITE_API_BASE: https://${{ vars.BACKEND_HOST }}
+          VITE_CLIENT_TOKEN: ${{ secrets.TILEFOLIO_CLIENT_TOKEN }}
       - run: cp dist/index.html dist/404.html   # SPA fallback (e.g. broker OAuth /connect/<id>)
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3

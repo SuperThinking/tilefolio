@@ -46,6 +46,12 @@ class Settings:
     cookie_secure: bool = _bool("TF_COOKIE_SECURE", False)
     google_client_id: str = os.environ.get("TF_GOOGLE_CLIENT_ID", "")
 
+    # Browser access control. The client token is deliberately treated as a public
+    # app identifier: it filters casual direct callers, but is not a substitute for
+    # user authentication because a browser-delivered value can be copied.
+    client_token: str = os.environ.get("TF_CLIENT_TOKEN", "")
+    metrics_token: str = os.environ.get("TF_METRICS_TOKEN", "")
+
     # Cross-origin frontend (e.g. GitHub Pages). Comma-separated exact origins; empty = same-origin only.
     cors_origins: list = field(default_factory=lambda: [
         o.strip().rstrip("/") for o in os.environ.get("TF_CORS_ORIGINS", "").split(",") if o.strip()

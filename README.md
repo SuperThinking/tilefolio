@@ -27,6 +27,12 @@ To build for production, run `make run`. It builds `frontend/dist` and serves it
 Configuration is through `backend/.env` (see `.env.example`). Everything is optional locally. Set `TF_SESSION_SECRET` and
 `TF_COOKIE_SECURE=1` in production. Set `TF_GOOGLE_CLIENT_ID` to enable sign-in, and `TF_FINNHUB_API_KEY` for Finnhub US quotes.
 
+In production, set `TF_CLIENT_TOKEN` on the backend and the same value as the GitHub Actions secret
+`TILEFOLIO_CLIENT_TOKEN`; the frontend build sends it as `X-Tilefolio-Client`. Every frontend request also sends an
+anonymous browser UUID as `X-Client-UUID`. The UUID is not connected to Google accounts. These controls reduce casual
+API abuse, but a browser-delivered token is not a true secret—use a server-side proxy or user authentication if the
+data must not be obtainable by copied browser requests.
+
 ## Hotkeys
 `s` settings · `h` hide amounts · `g` cycle grouping · `f` fullscreen · `Esc` close
 

@@ -8,7 +8,7 @@ git push main ──► GitHub Actions (.github/workflows/deploy.yml)
                    └─ frontend/** changed ─► svelte-check + build ─► GitHub Pages
                                               (waits for the backend deploy when both changed)
 Browser ──► https://<user>.github.io/<repo>/   (static SPA)
-        ──► https://139-84-221-234.sslip.io/api/*  (Caddy :443 → 127.0.0.1:8000, CORS + bearer token)
+        ──► https://139-84-221-234.sslip.io/api/*  (Caddy :443 → 127.0.0.1:8000, CORS + client-access gate)
 ```
 
 PRs run the tests and the build but never deploy. **Git is the only way to change production.** Don't edit
@@ -32,8 +32,16 @@ The CI SSH key can only run `tilefolio-deploy` (forced command + `restrict`), wi
    `ssh-copy-id root@139.84.221.234`
 2. **CI deploy key** (stays out of the repo):
    `ssh-keygen -t ed25519 -N '' -f ~/.ssh/tilefolio_ci -C tilefolio-ci`
-3. **Bootstrap the server.** Installs Caddy, uv, the systemd unit and the firewall, and turns off SSH password login:
-   `make bootstrap CORS_ORIGIN=https://<github-user>.github.io`
+3. **Bootstrap the server.** Installs Caddy, uv, the systemd unit and the firewall, and turns off SSH password login.
+   Generate one URL-safe value and use it in both places:
+   ```bash
+   CLIENT_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+   gh secret set TILEFOLIO_CLIENT_TOKEN -R SuperThinking/tilefolio --body "$CLIENT_TOKEN"
+   make bootstrap CORS_ORIGIN=https://<github-user>.github.io CLIENT_TOKEN="$CLIENT_TOKEN"
+   ```
+   The backend checks the exact configured origin, the `X-Tilefolio-Client` value and a valid `X-Client-UUID` on
+   every API request except the public deployment health probe. The client token is visible in the static bundle, so
+   it is an abuse-control gate, not a confidential API credential.
 4. **GitHub repo**: create it, then run `bash deploy/github-setup.sh`. It sets the variables and secrets,
    enables Pages (source = Actions) and pushes `main`. It reads `GH_TOKEN` from the env or from `.env`, and it's safe to re-run.
    Optionally, under Settings → Environments → `production`,
@@ -41,6 +49,8 @@ The CI SSH key can only run `tilefolio-deploy` (forced command + `restrict`), wi
 5. Optional integrations go in `/etc/tilefolio/env`:
    - Google sign-in: set `TF_GOOGLE_CLIENT_ID`, and add `https://<user>.github.io` as an authorised JS origin.
    - `TF_FINNHUB_API_KEY`.
+   - `TF_METRICS_TOKEN` (optional, then scrape `https://<host>/internal/metrics` with `X-Metrics-Token`; keep this
+     token server-side).
    - Broker apps need their redirect URL set to `https://<user>.github.io/<repo>/connect/<kite|upstox>`.
 
 ## Day-to-day (humans and agents)
@@ -60,4 +70,18 @@ The CI SSH key can only run `tilefolio-deploy` (forced command + `restrict`), wi
   long-lived, point your own domain's A record at the server, then update `BACKEND_HOST`, re-run bootstrap and update `CORS_ORIGIN`.
 - The repo, the Pages site and the API are all public. Uploaded CAS and broker files are parsed in memory and never stored.
   Synced state (holdings) is stored in `/var/lib/tilefolio`.
-- Single process, single box, so rate limits are in memory. No backups are configured yet.
+- Single process, single box, so rate limits and the quote cache are in memory. Anonymous request metrics are stored
+  as hourly aggregates in SQLite (`api_clients`, `api_client_buckets`, `api_request_metrics`).
+
+## API metrics and visualization
+
+The backend records request count, status, latency, endpoint, hourly activity and anonymous unique-client counts.
+For a quick check, configure `TF_METRICS_TOKEN` and run:
+
+```bash
+curl -H "X-Metrics-Token: $TF_METRICS_TOKEN" https://<host>/internal/metrics
+```
+
+Point Prometheus at that endpoint and build a small Grafana dashboard with panels for `tilefolio_api_requests_total`,
+`tilefolio_unique_clients_24h`, request duration, error rate, and requests by endpoint. Do not expose the metrics
+endpoint to the public frontend.

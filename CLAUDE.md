@@ -22,6 +22,7 @@ backend/            Python 3.11+ FastAPI (uv). Serves /api/* and the built SPA f
   app/brokers/      kite.py, upstox.py: stateless bring-your-own-key OAuth exchange + holdings
   app/instruments.py NSE equity list + Nifty500 industries + AMFI schemes -> SQLite (search, ISIN lookup)
   app/auth.py       Google ID-token verify + itsdangerous session token (Bearer header, or cookie same-origin)
+  app/security.py   anonymous client UUID validation + optional public app-access token/origin gate
   app/routes/api.py Every endpoint (thin handlers)
   tests/            pytest; HTTP mocked with httpx.MockTransport (see conftest.Router)
 frontend/           Svelte 5 (runes) + Vite; deps: d3-hierarchy, d3-interpolate only
@@ -125,6 +126,10 @@ dependency resolution on old versions. Other modules may use it.
   sends `Authorization: Bearer` (third-party cookies are blocked). Same-origin also gets an HttpOnly SameSite=Lax cookie.
   CORS: exact origins from `TF_CORS_ORIGINS`, `allow_credentials=False`. `PUT /api/state` requires JSON.
 - Rate limits live in `ratelimit.py` (in-memory, single process). Use Redis if you scale out.
+- Every non-health API request must include a valid `X-Client-UUID`. Production also sets `TF_CLIENT_TOKEN`, which the
+  static frontend receives as build-time `VITE_CLIENT_TOKEN` and sends as `X-Tilefolio-Client`; this is an abuse gate,
+  not a secret. API request analytics are aggregated in SQLite and exposed only through token-protected
+  `/internal/metrics` for Prometheus.
 - Outbound requests use an honest generic User-Agent (`app/http.py`). Don't impersonate browsers or
   tune headers to evade provider rate limits or bot checks. On 403/429 providers trip a `Backoff`, so
   honour it. Never put user identity in outbound headers.

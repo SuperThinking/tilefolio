@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # One-time (idempotent) server setup for Tilefolio on a fresh Ubuntu/Debian VPS. Run as root:
 #
-#   ssh root@HOST 'bash -s' -- <PUBLIC_HOSTNAME> "<CORS_ORIGIN>" "<CI_PUBLIC_KEY>" < deploy/bootstrap.sh
+#   ssh root@HOST 'bash -s' -- <PUBLIC_HOSTNAME> "<CORS_ORIGIN>" "<CI_PUBLIC_KEY>" "<CLIENT_TOKEN>" < deploy/bootstrap.sh
 #
 #   PUBLIC_HOSTNAME  e.g. 139-84-221-234.sslip.io (Caddy gets a Let's Encrypt cert for it)
 #   CORS_ORIGIN      the frontend origin, e.g. https://<github-user>.github.io
 #   CI_PUBLIC_KEY    the GitHub Actions deploy key (ssh-ed25519 ...); it gets pinned to tilefolio-deploy
+#   CLIENT_TOKEN     same value as the GitHub TILEFOLIO_CLIENT_TOKEN secret (public app-access gate)
 #
 # Safe to re-run: re-installs the deploy script / unit / Caddyfile and keeps /etc/tilefolio/env.
 # Code is NOT deployed here. The first CI run (or a manual `tilefolio-deploy deploy`) does that.
@@ -14,11 +15,13 @@ set -euo pipefail
 HOSTNAME_PUBLIC=${1:?public hostname required}
 CORS_ORIGIN=${2:?cors origin required}
 CI_PUBKEY=${3:?CI public key required}
+CLIENT_TOKEN=${4:?client token required}
 REPO_RAW_DIR=$(mktemp -d)
 trap 'rm -rf "$REPO_RAW_DIR"' EXIT
 
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 1; }
 [[ "$CI_PUBKEY" =~ ^ssh-(ed25519|rsa)\ [A-Za-z0-9+/=]+ ]] || { echo "CI_PUBLIC_KEY doesn't look like an SSH public key" >&2; exit 1; }
+[[ "$CLIENT_TOKEN" =~ ^[A-Za-z0-9_-]{32,}$ ]] || { echo "CLIENT_TOKEN must be at least 32 URL-safe characters" >&2; exit 1; }
 
 # The deploy script, unit and Caddyfile are sent alongside this script as a base64 tarball in TF_BUNDLE
 # (see `make bootstrap`), so the server never needs to clone the repo.
@@ -57,11 +60,18 @@ TF_PUBLIC_ORIGIN=https://${HOSTNAME_PUBLIC}
 TF_CORS_ORIGINS=${CORS_ORIGIN}
 TF_SESSION_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=')
 TF_COOKIE_SECURE=1
+TF_CLIENT_TOKEN=${CLIENT_TOKEN}
+TF_METRICS_TOKEN=
 TF_GOOGLE_CLIENT_ID=
 TF_FINNHUB_API_KEY=
 EOF
 else
   sed -i "s#^TF_CORS_ORIGINS=.*#TF_CORS_ORIGINS=${CORS_ORIGIN}#" /etc/tilefolio/env
+  if grep -q '^TF_CLIENT_TOKEN=' /etc/tilefolio/env; then
+    sed -i "s#^TF_CLIENT_TOKEN=.*#TF_CLIENT_TOKEN=${CLIENT_TOKEN}#" /etc/tilefolio/env
+  else
+    printf '\nTF_CLIENT_TOKEN=%s\n' "$CLIENT_TOKEN" >> /etc/tilefolio/env
+  fi
 fi
 chown root:tilefolio /etc/tilefolio/env && chmod 640 /etc/tilefolio/env
 

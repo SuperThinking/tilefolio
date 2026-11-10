@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 from ..http import Backoff, get_client
 from ..models import Instrument, Quote
@@ -20,6 +20,13 @@ CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
 _CONCURRENCY = 4
 backoff = Backoff(120)
 
+# Verified aliases for securities whose BSE listing is absent/unusable in
+# Yahoo's chart feed. Add entries only after confirming the alternate ticker is
+# the same security; do not blindly turn every BSE request into an NSE request.
+BSE_YAHOO_FALLBACKS = {
+    "LIQUIDBEES": ["LIQUIDBEES.NS"],
+}
+
 
 def yahoo_symbol(inst: Instrument) -> Optional[str]:
     if inst.type == "IN_EQ":
@@ -28,6 +35,24 @@ def yahoo_symbol(inst: Instrument) -> Optional[str]:
     if inst.type == "US_EQ":
         return inst.symbol.replace(".", "-")  # BRK.B -> BRK-B
     return None
+
+
+def yahoo_symbols(inst: Instrument) -> List[str]:
+    """Return the primary Yahoo ticker and safe fallbacks for the instrument.
+
+    Yahoo does not expose every BSE line consistently. LIQUIDBEES is a concrete
+    example: the BSE key may have no usable ``.BO`` chart result even though the
+    same ETF's canonical Yahoo quote is available as ``LIQUIDBEES.NS``. The
+    response still uses the original BSE instrument key; only the provider
+    lookup falls back.
+    """
+    primary = yahoo_symbol(inst)
+    if not primary:
+        return []
+    symbols = [primary]
+    if inst.type == "IN_EQ" and inst.exchange == "BSE":
+        symbols.extend(BSE_YAHOO_FALLBACKS.get(inst.symbol, []))
+    return symbols
 
 
 def parse_chart(payload: dict) -> Optional[dict]:
@@ -70,15 +95,19 @@ async def fetch_quotes(instruments: Iterable[Instrument]) -> Dict[str, Quote]:
     out: Dict[str, Quote] = {}
 
     async def one(inst: Instrument) -> None:
-        sym = yahoo_symbol(inst)
-        if not sym:
+        symbols = yahoo_symbols(inst)
+        if not symbols:
             return
-        async with sem:
-            try:
-                data = await fetch_symbol(sym)
-            except Exception as e:  # network errors shouldn't sink the batch
-                log.info("yahoo %s failed: %s", sym, e)
-                return
+        data = None
+        for sym in symbols:
+            async with sem:
+                try:
+                    data = await fetch_symbol(sym)
+                except Exception as e:  # network errors shouldn't sink the batch
+                    log.info("yahoo %s failed: %s", sym, e)
+                    data = None
+            if data:
+                break
         if data:
             default_ccy = "INR" if inst.type == "IN_EQ" else "USD"
             out[inst.key] = Quote(

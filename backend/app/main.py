@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db, instruments
@@ -18,6 +20,7 @@ from .config import settings
 from .http import close_client
 from .prices import mfnav
 from .routes.api import router
+from . import security
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("tilefolio")
@@ -54,15 +57,53 @@ app = FastAPI(title="Tilefolio", lifespan=lifespan, docs_url="/api/docs", openap
 app.include_router(router)
 
 if settings.cors_origins:
-    # Bearer-token auth, no cookies cross-origin → allow_credentials stays False.
+    # No cookies cross-origin → allow_credentials stays False. The client-access
+    # header is listed so browsers can complete its CORS preflight.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_methods=["GET", "POST", "PUT", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "X-CAS-Password"],
+        allow_headers=[
+            "Authorization", "Content-Type", "X-CAS-Password",
+            "X-Client-UUID", "X-Tilefolio-Client",
+        ],
         allow_credentials=False,
         max_age=600,
     )
+
+
+@app.middleware("http")
+async def request_controls(request: Request, call_next):
+    """Require an anonymous client UUID and, in production, the public app token."""
+    path = request.url.path
+    is_api = path == "/api" or path.startswith("/api/")
+    started = time.perf_counter()
+    response = None
+    status_code = 500
+    try:
+        # Keep the deployment probe public. CORS preflight must reach
+        # CORSMiddleware without an application token or UUID.
+        if is_api and path != "/api/health" and request.method != "OPTIONS":
+            error = security.access_error(request)
+            if error:
+                status_code, detail = error
+                response = JSONResponse({"detail": detail}, status_code=status_code)
+            else:
+                response = await call_next(request)
+                status_code = response.status_code
+        else:
+            response = await call_next(request)
+            status_code = response.status_code
+    finally:
+        if is_api and path != "/api/health" and request.method != "OPTIONS":
+            try:
+                db.record_api_request(
+                    security.client_uuid(request), request.method, path, status_code,
+                    (time.perf_counter() - started) * 1000,
+                )
+            except Exception as e:  # analytics must never take the API down
+                log.warning("metrics recording failed: %s", e)
+    return response
 
 
 @app.middleware("http")
@@ -72,6 +113,16 @@ async def security_headers(request, call_next):
     resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     resp.headers.setdefault("X-Frame-Options", "DENY")
     return resp
+
+
+@app.get("/internal/metrics", include_in_schema=False)
+def internal_metrics(request: Request) -> PlainTextResponse:
+    """Prometheus scrape endpoint; deliberately separate from the public API."""
+    token = settings.metrics_token
+    presented = request.headers.get("x-metrics-token", "")
+    if not token or not presented or not secrets.compare_digest(presented, token):
+        raise HTTPException(404, "Not found")
+    return PlainTextResponse(db.prometheus_metrics(), media_type="text/plain; version=0.0.4")
 
 
 _index = settings.static_dir / "index.html"

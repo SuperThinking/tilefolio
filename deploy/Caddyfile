@@ -22,6 +22,9 @@ __HOST__ {
 			request>headers>Authorization delete
 			request>headers>X-Cas-Password delete
 			request>headers>Cookie delete
+			request>headers>X-Tilefolio-Client delete
+			request>headers>X-Client-UUID delete
+			request>headers>X-Metrics-Token delete
 		}
 	}
 }

@@ -6,6 +6,8 @@ from typing import Dict, Tuple
 
 from fastapi import HTTPException, Request
 
+from .security import client_uuid
+
 
 class RateLimiter:
     def __init__(self, rate_per_min: float, burst: int) -> None:
@@ -25,7 +27,11 @@ class RateLimiter:
 
     def __call__(self, request: Request) -> None:
         # Behind a reverse proxy, configure uvicorn --proxy-headers so client.host is the real IP.
-        self.check(request.client.host if request.client else "unknown")
+        ip = request.client.host if request.client else "unknown"
+        # UUID gives independent browser clients fair buckets behind one NAT;
+        # retaining the IP keeps UUID rotation from bypassing the whole limiter.
+        uuid = client_uuid(request)
+        self.check(f"{ip}:{uuid}" if uuid else ip)
 
 
 quotes_limiter = RateLimiter(rate_per_min=30, burst=10)
