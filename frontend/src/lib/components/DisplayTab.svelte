@@ -49,7 +49,14 @@
 
   <h3>Privacy &amp; amounts</h3>
   <label class="chk"><input type="checkbox" checked={$settings.privacy} onchange={(e) => set('privacy', e.currentTarget.checked)} /> Hide all amounts (only % shown). Hotkey <b>h</b></label>
-  <label class="chk"><input type="checkbox" checked={$settings.showTileValues} onchange={(e) => set('showTileValues', e.currentTarget.checked)} /> Show value on tiles</label>
+  <label class="chk"><input type="checkbox" checked={$settings.showTileValues} onchange={(e) => set('showTileValues', e.currentTarget.checked)} /> Show values on tiles</label>
+  <label>Amounts shown on tiles
+    <select class="ctl" value={$settings.tileAmountMode || 'value'} onchange={(e) => set('tileAmountMode', e.currentTarget.value)}>
+      <option value="value">Current value only</option>
+      <option value="both">Current value + invested amount</option>
+      <option value="invested">Invested amount only</option>
+    </select>
+  </label>
   <label class="chk"><input type="checkbox" checked={$settings.showTilePrice} onchange={(e) => set('showTilePrice', e.currentTarget.checked)} /> Show price (LTP) on tiles</label>
   <label class="chk"><input type="checkbox" checked={$settings.showSummary} onchange={(e) => set('showSummary', e.currentTarget.checked)} /> Show portfolio summary (corner)</label>
   <label class="chk"><input type="checkbox" checked={$settings.showTotalValue} disabled={!$settings.showSummary} onchange={(e) => set('showTotalValue', e.currentTarget.checked)} /> Include total portfolio value in summary</label>

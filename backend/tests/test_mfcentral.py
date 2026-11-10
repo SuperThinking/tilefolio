@@ -65,6 +65,26 @@ def test_parse(seed_master):
     assert "ABCDE1234F" not in blob and "test@example.com" not in blob and "1111111111" not in blob
 
 
+def test_parse_header_with_opening_balance_on_next_line(seed_master):
+    text = """Consolidated Account Statement
+MFCentralDetailCAS_v1.2_test
+HDFC Mutual Fund
+FOLIO NO: 12345678
+HDFC Large Cap Fund - Regular Plan - Growth (Advisor: ARN-13549/HDFC Securities Ltd) ISIN: INF179K01BE2
+KYC : OK
+Opening Unit Balance: 21.166
+--- --- No Transaction during this statement period --- --- --- --- ---
+Closing Unit Balance: 21.166 Nav as on 07-NOV-2026: INR 1,156.837 Valuation on 08-Nov-2026 : INR 24,485.61
+"""
+
+    res = mfc.parse_text(text)
+
+    assert len(res.holdings) == 1
+    assert res.holdings[0].isin == "INF179K01BE2"
+    assert res.holdings[0].qty == 21.166
+    assert not any("No funds with a closing balance" in w for w in res.warnings)
+
+
 def test_platform_mapping():
     assert mfc.platform("INZ000031633/DIRECT") == "Zerodha"
     assert mfc.platform("INZ000208032/NEXTBILLION TECHNOLOGIES PRIVATE LIMITED") == "Groww"

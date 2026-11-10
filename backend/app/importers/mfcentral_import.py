@@ -30,6 +30,12 @@ HEADER_RE = re.compile(
     r"^(?P<name>.+?)\s*\(Advisor:\s*(?P<advisor>.*?)\s+ISIN:\s*(?P<isin>INF[0-9A-Z]{9})"
     r"\s+Opening Unit Balance:\s*(?P<open>" + _NUM + ")"
 )
+# pypdfium2 can put the opening-balance column on a later line, often after
+# the printed KYC line. Keep the header fields separate so both layouts work.
+HEADER_BASE_RE = re.compile(
+    r"^(?P<name>.+?)\s*\(Advisor:\s*(?P<advisor>.*?)\s+ISIN:\s*(?P<isin>INF[0-9A-Z]{9})\s*$"
+)
+OPEN_RE = re.compile(r"^Opening Unit Balance:\s*(?P<open>" + _NUM + r")\s*$")
 TXN_RE = re.compile(
     r"^(?P<date>\d{2}-[A-Za-z]{3}-\d{4})\s+(?P<desc>.*?)\s+(?P<amount>" + _NUM + r")\s+(?P<units>" + _NUM + r")"
     r"\s+(?P<price>" + _NUM + r")\s+(?P<balance>" + _NUM + r")\s*$"
@@ -106,6 +112,7 @@ def parse_text(text: str) -> ImportResult:
     res = ImportResult(holdings=[], source="cas")
     schemes: List[_Scheme] = []
     cur: Optional[_Scheme] = None
+    pending_header = None
     lines = [" ".join(r.split()) for r in text.splitlines()]
     lines = [l for l in lines if l]
     for i, line in enumerate(lines):
@@ -115,8 +122,30 @@ def parse_text(text: str) -> ImportResult:
             m = HEADER_RE.match(lines[i - 1] + " " + line)
         if m:
             cur = _Scheme(m["name"].strip(), m["isin"], m["advisor"], num(m["open"]))
+            pending_header = None
             schemes.append(cur)
             continue
+
+        base = HEADER_BASE_RE.match(line)
+        if base:
+            # Some MF Central PDFs render the opening-balance column separately
+            # from the scheme header (with `KYC : OK` between the two lines).
+            pending_header = base
+            continue
+
+        if pending_header:
+            opening = OPEN_RE.match(line)
+            if opening:
+                cur = _Scheme(
+                    pending_header["name"].strip(),
+                    pending_header["isin"],
+                    pending_header["advisor"],
+                    num(opening["open"]),
+                )
+                schemes.append(cur)
+                pending_header = None
+                continue
+
         if cur is None:
             continue
         m = CLOSE_RE.search(line)

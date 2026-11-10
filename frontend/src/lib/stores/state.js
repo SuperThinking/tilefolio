@@ -19,7 +19,8 @@ export const DEFAULT_SETTINGS = {
   hiddenBrokers: [],          // quick filter by account
   colorMetric: 'day',         // day | total — drives tile colour
   labelMetric: 'both',        // both | day (= only the colour metric) — % shown on tiles
-  showTileValues: true,       // ₹ value on tiles + tooltip amounts
+  showTileValues: true,       // show the selected amount(s) on tiles; hover always includes both
+  tileAmountMode: 'value',    // value | both | invested
   showTilePrice: false,       // LTP on tiles
   showSummary: true,          // corner summary (total value, day/total change)
   showTotalValue: true,       // include absolute total in the summary

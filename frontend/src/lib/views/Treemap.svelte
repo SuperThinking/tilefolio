@@ -147,7 +147,12 @@
         {#if t.showSecondary}<div class="sec">{otherLabel} {pct(t.secondary)}</div>{/if}
         {#if t.showValue}
           <div class="val">
-            {money(t.r.value, base)}{#if settings.showTilePrice && t.r.price != null}&nbsp;·&nbsp;{fmtPrice(t.r.price, t.r.currency)}{/if}
+            {#if (settings.tileAmountMode || 'value') !== 'invested'}
+              <div>Value {money(t.r.value, base)}{#if settings.showTilePrice && t.r.price != null}&nbsp;·&nbsp;{fmtPrice(t.r.price, t.r.currency)}{/if}</div>
+            {/if}
+            {#if (settings.tileAmountMode || 'value') !== 'value'}
+              <div>Invested {t.r.costKnown ? money(t.r.invested, base) : '—'}</div>
+            {/if}
           </div>
         {/if}
       {/if}
@@ -167,6 +172,7 @@
           <tr><td>Day</td><td class={hover.dayPct > 0 ? 'pos' : hover.dayPct < 0 ? 'neg' : ''}>{pct(hover.dayPct)}{#if !settings.privacy}&nbsp;({money(hover.dayChange, base, { sign: true })}){/if}</td></tr>
           <tr><td>Total</td><td class={hover.totalPct > 0 ? 'pos' : hover.totalPct < 0 ? 'neg' : ''}>{pct(hover.totalPct)}{#if !settings.privacy}&nbsp;({money(hover.totalChange, base, { sign: true })}){/if}</td></tr>
           <tr><td>Value</td><td>{settings.privacy ? MASK : money(hover.value, base, { compact: false })}</td></tr>
+          <tr><td>Invested</td><td>{settings.privacy ? MASK : hover.costKnown ? money(hover.invested, base, { compact: false }) : 'cost unknown'}</td></tr>
           <tr><td>Qty · Avg</td><td>{settings.privacy ? MASK : `${+hover.qty.toFixed(4)} · ${hover.costKnown ? fmtPrice(hover.avgPrice, hover.currency) : 'cost unknown'}`}</td></tr>
           {#if hover.parts?.length > 1}
             <tr><td>Accounts</td><td>{#each hover.parts as p}<div>{p.broker || 'Unassigned'}{settings.privacy ? '' : ` · ${+p.qty.toFixed(4)}`}</div>{/each}</td></tr>
@@ -197,7 +203,7 @@
   .sym { font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pct { font-size: .78em; opacity: .95; font-variant-numeric: tabular-nums; }
   .sec { font-size: .55em; opacity: .8; font-variant-numeric: tabular-nums; }
-  .val { font-size: .55em; opacity: .8; margin-top: .15em; font-variant-numeric: tabular-nums; }
+  .val { font-size: .55em; opacity: .8; margin-top: .15em; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .stale { position: absolute; top: 2px; right: 5px; font-size: 12px; opacity: .6; }
   .tip {
     position: fixed; z-index: 20; width: 260px; pointer-events: none; padding: 10px 12px;
