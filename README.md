@@ -3,6 +3,12 @@
 A minimal, full-screen **portfolio treemap** for Indian stocks, US stocks and Indian mutual funds. It's built to sit
 on a monitor or projector. The screen shows only the treemap. A hidden ⚙ in the top-right opens everything else.
 
+## Preview
+
+![Tilefolio portfolio treemap with fictional Indian stocks, US stocks and mutual funds, grouped by asset class](docs/images/tilefolio-demo.png)
+
+*Illustrative demo only. Holdings, prices, returns and exchange rates are synthetic; no real portfolio data is shown.*
+
 - **Import:** guided broker exports (Zerodha, Groww, Upstox, INDmoney), any CSV/XLSX, a CAMS/KFintech **CAS PDF**
   for all mutual funds, or manual entry. There's also a "Request a broker" button.
 - **Optional direct sync:** bring your own Kite Connect Personal or Upstox API key.
